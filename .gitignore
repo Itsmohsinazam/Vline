@@ -1,0 +1,23 @@
+# Database
+vline_data.db
+
+# Configuration
+vline_config.json
+
+# Image snapshots
+snapshots/
+
+# Python caches and artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+.env
+
+# OS generated files
+.DS_Store
+Thumbs.db

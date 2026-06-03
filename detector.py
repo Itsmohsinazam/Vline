@@ -153,6 +153,9 @@ class VideoProcessor(threading.Thread):
         # Atomic latest-frame reference (GUI reads, capture writes)
         self._latest_display_frame = None
         self._frame_lock = threading.Lock()
+        
+        self._latest_detections = []
+        self._det_lock = threading.Lock()
 
     def stop(self):
         self._stop_event.set()
@@ -178,8 +181,7 @@ class VideoProcessor(threading.Thread):
 
         fps = cap.get(cv2.CAP_PROP_FPS)
         sleep_time = 1.0 / fps if (fps and fps > 0) else 0.033
-        if self.source == 0:
-            sleep_time = 0.033
+        is_camera = isinstance(self.source, int)
 
         frame_idx = 0
         while not self._stop_event.is_set():
@@ -190,8 +192,15 @@ class VideoProcessor(threading.Thread):
 
             frame_idx += 1
 
+            # Apply the latest detections to the display frame so boxes persist
+            display_frame = frame.copy()
+            with self._det_lock:
+                dets = self._latest_detections
+            if dets:
+                display_frame = draw_overlays(display_frame, dets)
+
             # Resize for display and store as latest (GUI picks it up)
-            display = cv2.resize(frame, (DISPLAY_WIDTH, DISPLAY_HEIGHT))
+            display = cv2.resize(display_frame, (DISPLAY_WIDTH, DISPLAY_HEIGHT))
             with self._frame_lock:
                 self._latest_display_frame = display
 
@@ -202,9 +211,10 @@ class VideoProcessor(threading.Thread):
                 except queue.Full:
                     pass
 
-            elapsed = time.time() - start_t
-            if elapsed < sleep_time:
-                time.sleep(sleep_time - elapsed)
+            if not is_camera:
+                elapsed = time.time() - start_t
+                if elapsed < sleep_time:
+                    time.sleep(sleep_time - elapsed)
 
         cap.release()
         # Only fire finished if we weren't already stopped by the user
@@ -305,11 +315,8 @@ class VideoProcessor(threading.Thread):
                         if self.on_detection:
                             self.on_detection(det)
 
-                if detections:
-                    annotated = draw_overlays(frame, detections)
-                    display = cv2.resize(annotated, (DISPLAY_WIDTH, DISPLAY_HEIGHT))
-                    with self._frame_lock:
-                        self._latest_display_frame = display
+                with self._det_lock:
+                    self._latest_detections = detections
 
             except Exception as e:
                 logger.error(f"Inference Error: {e}")
